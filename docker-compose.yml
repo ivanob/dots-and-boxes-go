@@ -1,0 +1,118 @@
+services:
+  cockroach-certs:
+    image: cockroachdb/cockroach:latest
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ ! -f /cockroach/certs/ca.crt ]; then
+          cockroach cert create-ca --certs-dir=/cockroach/certs --ca-key=/cockroach/certs/ca.key
+          cockroach cert create-node cockroachdb localhost 127.0.0.1 --certs-dir=/cockroach/certs --ca-key=/cockroach/certs/ca.key
+          cockroach cert create-client root --certs-dir=/cockroach/certs --ca-key=/cockroach/certs/ca.key
+        fi
+    volumes:
+      - cockroach_certs:/cockroach/certs
+
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      cockroach-certs:
+        condition: service_completed_successfully
+    command: start-single-node --certs-dir=/cockroach/certs --advertise-addr=cockroachdb:26257 --http-addr=0.0.0.0:8080
+    volumes:
+      - nakama_data:/cockroach/cockroach-data
+      - cockroach_certs:/cockroach/certs
+    ports:
+      - "26257:26257"
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-skf", "https://localhost:8080/health?ready=1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cockroach-init:
+    image: cockroachdb/cockroach:latest
+    entrypoint: ["/bin/sh", "-ec"]
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    environment:
+      COCKROACH_DB_NAME: ${COCKROACH_DB_NAME}
+      COCKROACH_DB_USER: ${COCKROACH_DB_USER}
+      COCKROACH_DB_PASSWORD: ${COCKROACH_DB_PASSWORD}
+    command:
+      - |
+        cockroach sql --certs-dir=/cockroach/certs --host=cockroachdb:26257 -e "
+          CREATE DATABASE IF NOT EXISTS $${COCKROACH_DB_NAME};
+          ALTER USER $${COCKROACH_DB_USER} WITH PASSWORD '$${COCKROACH_DB_PASSWORD}';
+        "
+    volumes:
+      - cockroach_certs:/cockroach/certs
+
+  nakama-migrate:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    depends_on:
+      cockroach-init:
+        condition: service_completed_successfully
+    command:
+      - migrate
+      - up
+      - --database.address
+      - postgresql://${COCKROACH_DB_USER}:${COCKROACH_DB_PASSWORD}@cockroachdb:26257/${COCKROACH_DB_NAME}?sslmode=require
+
+  nakama:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    depends_on:
+      nakama-migrate:
+        condition: service_completed_successfully
+    command:
+      - --config
+      - /nakama/data/local.yml
+      - --console.username
+      - ${NAKAMA_CONSOLE_USERNAME}
+      - --console.password
+      - ${NAKAMA_CONSOLE_PASSWORD}
+      - --console.signing_key
+      - ${NAKAMA_CONSOLE_SIGNING_KEY}
+      - --socket.server_key
+      - ${NAKAMA_SERVER_KEY}
+      - --runtime.http_key
+      - ${NAKAMA_HTTP_KEY}
+      - --session.encryption_key
+      - ${NAKAMA_SESSION_ENCRYPTION_KEY}
+      - --session.refresh_encryption_key
+      - ${NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY}
+      - --database.address
+      - postgresql://${COCKROACH_DB_USER}:${COCKROACH_DB_PASSWORD}@cockroachdb:26257/${COCKROACH_DB_NAME}?sslmode=require
+    ports:
+      - "7349:7349"  # gRPC
+      - "7350:7350"  # HTTP/WebSocket
+      - "7351:7351"  # Console
+    volumes:
+      - nakama_logs:/var/log/nakama
+    healthcheck:
+      test: ["CMD", "bash", "-lc", ": </dev/tcp/127.0.0.1/7350"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Simple HTTP server to serve the client
+  client:
+    image: nginx:alpine
+    volumes:
+      - ./client:/usr/share/nginx/html
+    ports:
+      - "8080:80"
+    depends_on:
+      - nakama
+
+volumes:
+  cockroach_certs:
+  nakama_data:
+  nakama_logs:

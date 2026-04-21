@@ -1,0 +1,23 @@
+name: nakama-game
+data_dir: "/nakama/data"
+
+logger:
+  stdout: true
+  level: "info"
+  file: ""
+
+console:
+  port: 7351
+
+socket:
+  outgoing_queue_size: 128
+  port: 7350
+
+database:
+  max_open_conns: 100
+  max_idle_conns: 100
+
+runtime:
+  env:
+    - "DEBUG=true"
+  path: "/nakama/data/modules"
