@@ -328,7 +328,7 @@ export default class DotsAndBoxesClient {
     return response.json();
   }
 
-  async init(serverUrl = "localhost", port = "7350", useSSL = false) {
+  async init(serverUrl = this.serverUrl, port = this.serverPort, useSSL = this.useSSL) {
     if (this.initPromise) {
       return this.initPromise;
     }

@@ -938,6 +938,6 @@ This project is a coding challenge implementation for Arkadium. Use as reference
 
 ## Deployment
 I have deployed this project into my private VPS so can be tested straight out-of-the-box. The URLs are:
-- Client: https://arkadium-dots-boxes.s3.eu-west-1.amazonaws.com/index.html 
+- Client: http://arkadium-dots-boxes.s3-website.eu-west-1.amazonaws.com
 - Server Nakama: http://161.97.163.223:7351/#/login?next=%2Fstatus
  

@@ -244,7 +244,6 @@ open http://localhost:8080
 ## 🔍 Known Limitations & Future Work
 
 ### Current Limitations
-1. **Polling latency**: 2-second delay (acceptable for turn-based)
 2. **No player names**: Auto-generated device IDs
 3. **No reconnection UI**: Must manually re-enter Game ID
 4. **No turn timer**: Players can stall indefinitely
@@ -253,9 +252,6 @@ open http://localhost:8080
 ### What I'd Do With More Time
 
 **High Priority** (next 4-8 hours):
-1. WebSocket state sync (eliminate polling)
-2. Unit tests for game logic
-3. Integration tests for RPC flows
 4. Player authentication (social login)
 5. Observability (metrics, structured logs)
 
@@ -296,13 +292,3 @@ This project demonstrates:
 
 **Focus**: Architecture and system design over visual polish (as requested)
 
----
-
-Thank you for reviewing this project! I'm prepared to:
-- Explain every architectural decision
-- Trace any code path
-- Extend the solution live
-- Discuss alternative implementations
-- Debug and optimize
-
-**Ready for technical interview discussion!** 🚀
