@@ -8,7 +8,7 @@
 |-------------|--------|----------------|
 | **Web-based client (HTML/JS)** | ✅ Complete | Vanilla JS + HTML5 Canvas in `client/` |
 | **Server component with authoritative state** | ✅ Complete | Nakama with Go runtime in `server/go_modules/` |
-| **Real-time communication (WebSockets)** | ⚠️ Partial | HTTP RPC with 2-second polling (WebSocket infrastructure ready) |
+| **Real-time communication (WebSockets)** | ✅ Complete | HTTP RPC for mutations + Nakama socket pushes for state sync |
 | **Database for persistence** | ✅ Complete | PostgreSQL 15 with Nakama storage collections |
 | **README with architecture** | ✅ Complete | Comprehensive README.md + ARCHITECTURE.md |
 
@@ -17,7 +17,7 @@
 | Feature | Status | Details |
 |---------|--------|---------|
 | **Lobby / Matchmaking** | ✅ Complete | Create/join game by ID |
-| **Real-time gameplay** | ✅ Complete | 2+ players with 2s polling updates |
+| **Real-time gameplay** | ✅ Complete | 2+ players with server-pushed updates |
 | **Persistence** | ✅ Complete | Survives server restart, loads from PostgreSQL |
 | **Match history** | ✅ Complete | Stores winner, scores, moves, duration |
 | **Game resolution** | ✅ Complete | Win/lose/draw detection and display |
@@ -55,16 +55,11 @@
 
 ### 2. **Communication Pattern**
 
-**Chosen**: HTTP RPC with polling (2-second interval)
-- ✅ Simple to implement and debug
-- ✅ Works with any proxy/firewall
-- ✅ Acceptable latency for turn-based game
-- ⚠️ Not ideal for real-time action games
-
-**Why not WebSockets**:
-- Time constraint (3-4 hours)
-- Polling demonstrates state sync principles
-- Easy upgrade path (Nakama supports both)
+**Chosen**: HTTP RPC for writes + Nakama realtime sockets for state delivery
+- ✅ Keeps server-side mutations authoritative
+- ✅ Eliminates repeated read requests while preserving simple RPC handlers
+- ✅ Immediate lobby and gameplay updates for all connected players
+- ✅ `get_game_state` remains available for reconnect and refresh recovery
 
 ### 3. **Database Schema**
 

@@ -5,16 +5,20 @@ class DotsAndBoxesClient {
     this.session = null;
     this.socket = null;
     this.gameId = null;
+    this.gameChannel = null;
+    this.gameChannelId = null;
     this.userId = null;
     this.gameState = null;
     this.playerColors = ["#ff6b6b", "#4ecdc4", "#ffd93d", "#a78bfa"];
     this.selectedLine = null;
-    this.pollInterval = null;
+    this.onGameStateChanged = null;
     this.serverUrl = "localhost";
     this.serverPort = "7350";
     this.useSSL = false;
     this.initPromise = null;
     this.refreshPromise = null;
+    this.socketConnectPromise = null;
+    this.reconnectTimeoutId = null;
   }
 
   getSessionStorageKeys() {
@@ -63,6 +67,164 @@ class DotsAndBoxesClient {
     }
 
     return payload;
+  }
+
+  setupSocket() {
+    if (this.socket) {
+      return;
+    }
+
+    this.socket = this.client.createSocket(this.useSSL, false);
+    this.socket.onchannelmessage = (message) => {
+      if (!this.gameChannelId || message.channel_id !== this.gameChannelId) {
+        return;
+      }
+
+      const content = message.content || {};
+
+	  if (content.type === "game_closed") {
+		this.handleGameClosed(content);
+		return;
+	  }
+
+	  if (content.type !== "game_state_update" || !content.gameState) {
+        return;
+      }
+
+      this.applyIncomingGameState(content.gameState);
+    };
+
+    this.socket.ondisconnect = () => {
+      this.gameChannel = null;
+      this.gameChannelId = null;
+      this.scheduleRealtimeReconnect();
+    };
+
+    this.socket.onerror = (error) => {
+      console.error("Socket error:", error);
+    };
+  }
+
+  async ensureSocketConnected() {
+    if (!this.client || !this.session) {
+      throw new Error("Socket requires an authenticated session.");
+    }
+
+    this.setupSocket();
+
+    if (this.socketConnectPromise) {
+      return this.socketConnectPromise;
+    }
+
+    this.socketConnectPromise = this.socket.connect(this.session, false).finally(() => {
+      this.socketConnectPromise = null;
+    });
+
+    return this.socketConnectPromise;
+  }
+
+  scheduleRealtimeReconnect() {
+    if (this.reconnectTimeoutId || !this.session) {
+      return;
+    }
+
+    this.reconnectTimeoutId = setTimeout(async () => {
+      this.reconnectTimeoutId = null;
+
+      try {
+        this.socket = null;
+        await this.ensureSocketConnected();
+
+        if (this.gameId && this.onGameStateChanged) {
+          await this.subscribeToGame(this.gameId);
+          const state = await this.getGameState(this.gameId);
+          this.applyIncomingGameState(state);
+        }
+      } catch (error) {
+        console.error("Realtime reconnect failed:", error);
+        this.scheduleRealtimeReconnect();
+      }
+    }, 1000);
+  }
+
+  shouldApplyGameState(nextState) {
+    if (!nextState) {
+      return false;
+    }
+
+    if (!this.gameState) {
+      return true;
+    }
+
+    if (nextState.updatedAt !== this.gameState.updatedAt) {
+      return true;
+    }
+
+    if ((nextState.lines?.length || 0) !== (this.gameState.lines?.length || 0)) {
+      return true;
+    }
+
+    if ((nextState.players?.length || 0) !== (this.gameState.players?.length || 0)) {
+      return true;
+    }
+
+    return nextState.started !== this.gameState.started || nextState.completed !== this.gameState.completed;
+  }
+
+  applyIncomingGameState(nextState) {
+    if (!this.shouldApplyGameState(nextState)) {
+      return false;
+    }
+
+    this.gameState = nextState;
+
+    if (this.onGameStateChanged) {
+      this.onGameStateChanged(nextState);
+    }
+
+    return true;
+  }
+
+  handleGameClosed(event) {
+    if (!event || event.closedBy === this.userId) {
+      return;
+    }
+
+    handleRemoteGameClosed(event);
+  }
+
+  async subscribeToGame(gameId) {
+    await this.ensureSocketConnected();
+
+    if (this.gameChannelId && this.gameId === gameId) {
+      return this.gameChannel;
+    }
+
+    await this.unsubscribeFromGame();
+
+    this.gameId = gameId;
+    this.gameChannel = await this.socket.joinChat(gameId, 1, false, false);
+    this.gameChannelId = this.gameChannel.id;
+
+    return this.gameChannel;
+  }
+
+  async unsubscribeFromGame() {
+    if (!this.socket || !this.gameChannelId) {
+      this.gameChannel = null;
+      this.gameChannelId = null;
+      return;
+    }
+
+    const channelId = this.gameChannelId;
+    this.gameChannel = null;
+    this.gameChannelId = null;
+
+    try {
+      await this.socket.leaveChat(channelId);
+    } catch (error) {
+      console.error("Failed to leave game channel:", error);
+    }
   }
 
   getRpcBaseUrl() {
@@ -178,6 +340,7 @@ class DotsAndBoxesClient {
 
         try {
           await this.refreshSessionIfNeeded();
+          await this.ensureSocketConnected();
           this.persistSession();
           console.log("Restored Nakama session:", this.userId);
           return this.session;
@@ -193,6 +356,7 @@ class DotsAndBoxesClient {
         this.session = await this.client.authenticateDevice(deviceId, true);
         localStorage.setItem("device_id", deviceId);
         this.userId = this.session.user_id;
+        await this.ensureSocketConnected();
         this.persistSession();
         console.log("Connected to Nakama:", this.userId);
         return this.session;
@@ -225,8 +389,11 @@ class DotsAndBoxesClient {
 
       const result = this.parseRpcPayload(response.payload);
       this.gameId = result.gameId;
+      if (result.gameState) {
+        this.gameState = result.gameState;
+      }
       console.log("Game created:", this.gameId);
-      return this.gameId;
+      return result;
     } catch (error) {
       console.error("Failed to create game:", error);
       throw error;
@@ -238,8 +405,12 @@ class DotsAndBoxesClient {
       const payload = JSON.stringify({ gameId });
       const response = await this.rpc("join_game", payload);
       this.gameId = gameId;
+      const result = this.parseRpcPayload(response.payload);
+      if (result.gameState) {
+        this.gameState = result.gameState;
+      }
       console.log("Joined game:", gameId);
-      return this.parseRpcPayload(response.payload);
+      return result;
     } catch (error) {
       console.error("Failed to join game:", error);
       throw error;
@@ -263,8 +434,12 @@ class DotsAndBoxesClient {
     try {
       const payload = JSON.stringify({ gameId });
       const response = await this.rpc("start_game", payload);
+      const result = this.parseRpcPayload(response.payload);
+      if (result.gameState) {
+        this.gameState = result.gameState;
+      }
       console.log("Game started");
-      return this.parseRpcPayload(response.payload);
+      return result;
     } catch (error) {
       console.error("Failed to start game:", error);
       throw error;
@@ -276,17 +451,11 @@ class DotsAndBoxesClient {
       const payload = JSON.stringify({ gameId, x1, y1, x2, y2 });
       const response = await this.rpc("make_move", payload);
       const result = this.parseRpcPayload(response.payload);
-      
-      // Update local state
+
       if (result.gameState) {
-        this.gameState = result.gameState;
-        updateUI();
-        
-        if (result.completed) {
-          showGameOver(result);
-        }
+        this.applyIncomingGameState(result.gameState);
       }
-      
+
       return result;
     } catch (error) {
       console.error("Failed to make move:", error);
@@ -294,28 +463,31 @@ class DotsAndBoxesClient {
     }
   }
 
-  startPolling(gameId, callback) {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+  async leaveGame(gameId) {
+    try {
+      const payload = JSON.stringify({ gameId });
+      const response = await this.rpc("leave_game", payload);
+      return this.parseRpcPayload(response.payload);
+    } catch (error) {
+      console.error("Failed to leave game:", error);
+      throw error;
     }
+  }
 
-    this.pollInterval = setInterval(async () => {
-      try {
-        const state = await this.getGameState(gameId);
-        if (callback) {
-          callback(state);
-        }
-      } catch (error) {
-        console.error("Polling error:", error);
-      }
-    }, 2000);
+  startPolling(gameId, callback) {
+    this.onGameStateChanged = callback || null;
+
+    this.subscribeToGame(gameId).catch((error) => {
+      console.error("Realtime subscription error:", error);
+    });
   }
 
   stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
+    this.onGameStateChanged = null;
+
+    this.unsubscribeFromGame().catch((error) => {
+      console.error("Realtime unsubscribe error:", error);
+    });
   }
 }
 
@@ -342,7 +514,7 @@ function isGameScreenActive() {
   return document.getElementById("gameScreen").classList.contains("active");
 }
 
-function handlePolledState(state) {
+function handleGameStateUpdate(state) {
   dotsClient.gameState = state;
 
   if (state.started && !state.completed && !isGameScreenActive()) {
@@ -351,7 +523,7 @@ function handlePolledState(state) {
     showGameScreen();
 
     dotsClient.startPolling(dotsClient.gameId, (nextState) => {
-      handlePolledState(nextState);
+      handleGameStateUpdate(nextState);
       if (isGameScreenActive()) {
         updateUI();
       }
@@ -376,16 +548,15 @@ async function createGame() {
   try {
     showStatus("Creating game...", "info");
     const gridSize = document.getElementById("gridSize").value;
-    const gameId = await dotsClient.createGame(gridSize);
-
-    await dotsClient.getGameState(gameId);
+    const result = await dotsClient.createGame(gridSize);
+    const gameId = result.gameId;
 
     showGameIdDisplay(gameId);
     showStatus("Game created! Share the Game ID with others.", "success");
 
-    // Poll for other players joining
+    // Subscribe for lobby updates
     dotsClient.startPolling(gameId, (state) => {
-      handlePolledState(state);
+      handleGameStateUpdate(state);
     });
   } catch (error) {
     showStatus("Failed to create game: " + error.message, "error");
@@ -416,17 +587,17 @@ async function joinGame() {
 
     showStatus("Joining game...", "info");
     const result = await dotsClient.joinGame(gameId);
-    
-    const state = await dotsClient.getGameState(gameId);
+
+  const state = result.gameState || dotsClient.gameState;
 
     showGameIdDisplay(gameId);
     clearStatus();
 
-    handlePolledState(state);
+      handleGameStateUpdate(state);
     
-    // Poll for game updates
+      // Subscribe for lobby or gameplay updates
     dotsClient.startPolling(gameId, (state) => {
-          handlePolledState(state);
+        handleGameStateUpdate(state);
     });
   } catch (error) {
     showStatus("Failed to join game: " + error.message, "error");
@@ -472,14 +643,13 @@ async function startGame() {
   try {
     showStatus("Starting game...", "info");
     await dotsClient.startGame(dotsClient.gameId);
-    await dotsClient.getGameState(dotsClient.gameId);
     
     dotsClient.stopPolling();
     showGameScreen();
     
-    // Start polling for game updates during play
+    // Subscribe for gameplay updates during play
     dotsClient.startPolling(dotsClient.gameId, (state) => {
-      handlePolledState(state);
+      handleGameStateUpdate(state);
     });
   } catch (error) {
     showStatus("Failed to start game: " + error.message, "error");
@@ -487,6 +657,7 @@ async function startGame() {
 }
 
 function showGameScreen() {
+  dotsClient.selectedLine = null;
   showScreen("gameScreen");
   document.getElementById("gameIdSmall").textContent = dotsClient.gameId;
   renderBoard();
@@ -639,7 +810,7 @@ function setupBoardCanvas() {
   const canvas = document.getElementById("gameBoard");
   if (!canvas) return;
 
-  canvas.addEventListener("click", (e) => handleCanvasClick(e, canvas));
+  canvas.onclick = (e) => handleCanvasClick(e, canvas);
 }
 
 function handleCanvasClick(e, canvas) {
@@ -736,6 +907,26 @@ function showGameOver(data) {
   }, 500);
 }
 
+function resetActiveGameState() {
+  dotsClient.stopPolling();
+  dotsClient.gameState = null;
+  dotsClient.gameId = null;
+  dotsClient.selectedLine = null;
+}
+
+function resetLobbyUI() {
+  document.getElementById("gameIdInput").value = "";
+  document.getElementById("gameIdDisplay").style.display = "none";
+  document.getElementById("playersContainer").style.display = "none";
+}
+
+function handleRemoteGameClosed(event) {
+  resetActiveGameState();
+  resetLobbyUI();
+  showScreen("lobbyScreen");
+  showStatus("Your opponent left the game. The match was closed.", "info");
+}
+
 function updateGameOverScreen(data) {
   const gameState = data.gameState || dotsClient.gameState;
   
@@ -781,25 +972,26 @@ function updateGameOverScreen(data) {
   document.getElementById("statGrid").textContent = `${gameState.gridSize}x${gameState.gridSize}`;
 }
 
-function leaveGame() {
-  if (confirm("Leave the game?")) {
-    dotsClient.stopPolling();
-    dotsClient.gameState = null;
-    dotsClient.gameId = null;
-    dotsClient.selectedLine = null;
+async function leaveGame() {
+  if (!confirm("Leave the game?")) {
+    return;
+  }
+
+  try {
+    await dotsClient.leaveGame(dotsClient.gameId);
+    resetActiveGameState();
+    resetLobbyUI();
     showScreen("lobbyScreen");
     clearStatus();
+    showStatus("You left the game.", "info");
+  } catch (error) {
+    showStatus("Failed to leave game: " + error.message, "error");
   }
 }
 
 function returnToLobby() {
-  dotsClient.stopPolling();
-  dotsClient.gameState = null;
-  dotsClient.gameId = null;
-  dotsClient.selectedLine = null;
-  document.getElementById("gameIdInput").value = "";
-  document.getElementById("gameIdDisplay").style.display = "none";
-  document.getElementById("playersContainer").style.display = "none";
+  resetActiveGameState();
+  resetLobbyUI();
   showScreen("lobbyScreen");
   clearStatus();
 }

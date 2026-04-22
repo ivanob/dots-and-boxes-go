@@ -67,9 +67,10 @@ open http://localhost:8080
 ┌─────────────────┐          ┌──────────────────┐          ┌──────────────┐
 │   Web Client    │          │   Nakama Server  │          │  PostgreSQL  │
 │   (HTML/JS)     │◄────────►│   (Go Runtime)   │◄────────►│   Database   │
-│                 │  HTTP    │                  │   SQL    │              │
+│                 │ HTTP RPC │                  │   SQL    │              │
+│                 │ + Socket │                  │          │              │
 │  - Canvas Board │  RPC     │  - Game Logic    │          │  - States    │
-│  - UI/UX        │  Polling │  - Validation    │          │  - History   │
+│  - UI/UX        │  Push    │  - Validation    │          │  - History   │
 │  - State Render │          │  - Persistence   │          │  - Sessions  │
 └─────────────────┘          └──────────────────┘          └──────────────┘
 ```
@@ -81,8 +82,8 @@ open http://localhost:8080
 - **Responsibilities**:
   - Render game board with dots, lines, and claimed boxes
   - Handle user input (clicking dots to draw lines)
-  - Communicate with server via Nakama HTTP RPC
-  - Poll for game state updates every 2 seconds
+  - Send mutations via Nakama HTTP RPC
+  - Receive state changes through Nakama realtime socket channels
   - Display lobby, active game, and game over screens
 
 **Files**:
@@ -135,7 +136,9 @@ open http://localhost:8080
     ↓
 [Server] Persist to PostgreSQL (game_states collection)
     ↓
-[Client] Display Game ID, start polling for players
+[Server] Broadcast lobby state to game channel
+  ↓
+[Client] Display Game ID, subscribe to game channel
     ↓
 [Other Player] Enters Game ID, clicks "Join Game"
     ↓
@@ -143,7 +146,9 @@ open http://localhost:8080
     ↓
 [Server] Update PostgreSQL
     ↓
-[All Clients] Poll detects new player, updates lobby
+[Server] Broadcast updated lobby state
+  ↓
+[All Clients] Realtime update refreshes lobby immediately
     ↓
 [Creator] Clicks "Start Game"
     ↓
@@ -176,11 +181,11 @@ open http://localhost:8080
     ↓
 [Server] If game complete, persist to match_history
     ↓
-[Server] Return updated state to client
+[Server] Return updated state to acting client
+  ↓
+[Server] Broadcast updated state to game channel
     ↓
 [Client] Renders board, updates scores
-    ↓
-[All Clients] Polling detects change within 2 seconds
     ↓
 [All Clients] Update UI with new board state
 ```
@@ -192,7 +197,7 @@ open http://localhost:8080
     ↓
 [Nakama] Reconnects to PostgreSQL
     ↓
-[Client] Next poll triggers RPC: get_game_state
+[Client] Rejoin game and request get_game_state
     ↓
 [Server] Reads from game_states collection
     ↓

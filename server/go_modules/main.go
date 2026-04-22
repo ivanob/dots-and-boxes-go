@@ -67,9 +67,34 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 	if err := initializer.RegisterRpc("make_move", rpcMakeMove); err != nil {
 		return err
 	}
+	if err := initializer.RegisterRpc("leave_game", rpcLeaveGame); err != nil {
+		return err
+	}
 
 	logger.Info("Dots and Boxes module initialized")
 	return nil
+}
+
+func broadcastGameEvent(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, gameID string, content map[string]interface{}) {
+	channelID, err := nk.ChannelIdBuild(ctx, "", gameID, runtime.Room)
+	if err != nil {
+		logger.Error("Failed to build game channel for %s: %v", gameID, err)
+		return
+	}
+
+	if _, err = nk.ChannelMessageSend(ctx, channelID, content, "", "", false); err != nil {
+		logger.Error("Failed to broadcast game event for %s: %v", gameID, err)
+	}
+}
+
+func broadcastGameState(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, gameState *GameState) {
+	content := map[string]interface{}{
+		"type":      "game_state_update",
+		"gameId":    gameState.ID,
+		"gameState": gameState,
+	}
+
+	broadcastGameEvent(ctx, logger, nk, gameState.ID, content)
 }
 
 // rpcCreateGame creates a new game
@@ -112,9 +137,12 @@ func rpcCreateGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk ru
 		return "", err
 	}
 
+	broadcastGameState(ctx, logger, nk, gameState)
+
 	response := map[string]interface{}{
-		"gameId": gameID,
-		"status": "waiting_for_players",
+		"gameId":    gameID,
+		"status":    "waiting_for_players",
+		"gameState": gameState,
 	}
 
 	data, _ := json.Marshal(response)
@@ -163,11 +191,14 @@ func rpcJoinGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runt
 		return "", err
 	}
 
+	broadcastGameState(ctx, logger, nk, gameState)
+
 	response := map[string]interface{}{
 		"gameId":      request.GameID,
 		"status":      map[bool]string{true: "started", false: "joined"}[gameState.Started],
 		"players":     gameState.Players,
 		"playerCount": len(gameState.Players),
+		"gameState":   gameState,
 	}
 
 	data, _ := json.Marshal(response)
@@ -220,9 +251,12 @@ func rpcStartGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk run
 		return "", err
 	}
 
+	broadcastGameState(ctx, logger, nk, gameState)
+
 	response := map[string]interface{}{
-		"gameId": request.GameID,
-		"status": "started",
+		"gameId":    request.GameID,
+		"status":    "started",
+		"gameState": gameState,
 	}
 
 	data, _ := json.Marshal(response)
@@ -281,6 +315,8 @@ func rpcMakeMove(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runt
 		return "", err
 	}
 
+	broadcastGameState(ctx, logger, nk, gameState)
+
 	// If game completed, persist match history
 	if gameState.Completed {
 		if err := persistMatchHistory(ctx, logger, nk, gameState); err != nil {
@@ -296,6 +332,57 @@ func rpcMakeMove(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runt
 		"completed":     gameState.Completed,
 		"winner":        gameState.Winner,
 		"gameState":     gameState,
+	}
+
+	data, _ := json.Marshal(response)
+	return string(data), nil
+}
+
+func rpcLeaveGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
+	var request struct {
+		GameID string `json:"gameId"`
+	}
+
+	if err := json.Unmarshal([]byte(payload), &request); err != nil {
+		return "", err
+	}
+
+	userID, ok := ctx.Value(runtime.RUNTIME_CTX_USER_ID).(string)
+	if !ok {
+		return "", errors.New("user ID not found")
+	}
+
+	gameState, err := loadGameState(ctx, logger, nk, request.GameID)
+	if err != nil {
+		return "", err
+	}
+
+	playerFound := false
+	for _, playerID := range gameState.Players {
+		if playerID == userID {
+			playerFound = true
+			break
+		}
+	}
+
+	if !playerFound {
+		return "", errors.New("player not in game")
+	}
+
+	if err := deleteGameState(ctx, nk, request.GameID); err != nil {
+		return "", err
+	}
+
+	broadcastGameEvent(ctx, logger, nk, request.GameID, map[string]interface{}{
+		"type":     "game_closed",
+		"gameId":   request.GameID,
+		"closedBy": userID,
+		"reason":   "player_left",
+	})
+
+	response := map[string]interface{}{
+		"gameId": request.GameID,
+		"closed": true,
 	}
 
 	data, _ := json.Marshal(response)
@@ -557,6 +644,18 @@ func loadGameState(ctx context.Context, logger runtime.Logger, nk runtime.Nakama
 	}
 
 	return &gameState, nil
+}
+
+func deleteGameState(ctx context.Context, nk runtime.NakamaModule, gameID string) error {
+	deletes := []*runtime.StorageDelete{
+		{
+			Collection: GameStateCollection,
+			Key:        gameID,
+			UserID:     "",
+		},
+	}
+
+	return nk.StorageDelete(ctx, deletes)
 }
 
 func persistMatchHistory(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, gameState *GameState) error {

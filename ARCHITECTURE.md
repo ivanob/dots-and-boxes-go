@@ -94,10 +94,24 @@ This document provides a detailed technical analysis of the Dots and Boxes multi
 └─────────────┘
 ```
 
-### Read Path (Polling)
+### Read Path (Realtime + Recovery)
 
 ```
-Every 2 seconds (client.js setInterval):
+On game mutation:
+
+Acting client → HTTP RPC mutation → Nakama
+               ↓
+             StorageWrite
+               ↓
+             PostgreSQL
+               ↓
+          ChannelMessageSend
+               ↓
+Clients subscribed to room channel
+       ↓
+  Update UI
+
+On reconnect or refresh:
 
 Client → RPC get_game_state → Nakama
                                   ↓

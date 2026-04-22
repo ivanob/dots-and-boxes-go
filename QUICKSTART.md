@@ -74,14 +74,13 @@ make clean       # Remove all data
 ```
 Browser → Nakama (Go) → PostgreSQL
    ↑                        ↓
-   └──── Polling ───────────┘
-        (2 seconds)
+        └── Realtime socket push ┘
 ```
 
 - **Client**: Vanilla JS + Canvas
 - **Server**: Nakama with Go runtime
 - **Database**: PostgreSQL 15
-- **Communication**: HTTP RPC + Polling
+- **Communication**: HTTP RPC + Realtime socket updates
 
 ## 🐛 Troubleshooting
 
@@ -111,7 +110,7 @@ SELECT * FROM storage WHERE collection = 'game_states';
 
 ## 🎯 Key Features Implemented
 
-✅ Real-time multiplayer (via polling)
+✅ Real-time multiplayer (server-pushed updates)
 ✅ Persistent game state
 ✅ Match history
 ✅ Turn-based gameplay with bonus turns
@@ -121,8 +120,7 @@ SELECT * FROM storage WHERE collection = 'game_states';
 
 ## 💡 Next Steps
 
-1. Add WebSocket support for real-time updates
-2. Implement player authentication
-3. Add leaderboards and statistics
-4. Create mobile-responsive UI
-5. Add AI opponent for single-player mode
+1. Add player authentication
+2. Add leaderboards and statistics
+3. Create mobile-responsive UI
+4. Add AI opponent for single-player mode
