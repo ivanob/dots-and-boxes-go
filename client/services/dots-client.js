@@ -1,5 +1,7 @@
 export default class DotsAndBoxesClient {
   constructor() {
+    const runtimeConfig = globalThis.__DOTS_CONFIG__ || {};
+
     this.client = null;
     this.session = null;
     this.socket = null;
@@ -12,9 +14,9 @@ export default class DotsAndBoxesClient {
     this.selectedLine = null;
     this.onGameStateChanged = null;
     this.onRemoteGameClosed = null;
-    this.serverUrl = "localhost";
-    this.serverPort = "7350";
-    this.useSSL = false;
+    this.serverUrl = runtimeConfig.serverUrl || "localhost";
+    this.serverPort = runtimeConfig.serverPort || "7350";
+    this.useSSL = runtimeConfig.useSSL === true || runtimeConfig.useSSL === "true";
     this.initPromise = null;
     this.refreshPromise = null;
     this.socketConnectPromise = null;

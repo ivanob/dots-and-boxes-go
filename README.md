@@ -3,18 +3,18 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.21-00ADD8?logo=go" alt="Go 1.21">
   <img src="https://img.shields.io/badge/Nakama-3.18-orange" alt="Nakama 3.18">
-  <img src="https://img.shields.io/badge/PostgreSQL-15-336791?logo=postgresql" alt="PostgreSQL 15">
+  <img src="https://img.shields.io/badge/CockroachDB-Latest-6933FF?logo=cockroachlabs" alt="CockroachDB">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker" alt="Docker">
 </p>
 
-A real-time multiplayer **Dots and Boxes** game built with Go, Nakama, and PostgreSQL. Players compete to claim the most boxes on a grid by drawing lines between adjacent dots.
+A real-time multiplayer **Dots and Boxes** game built with Go, Nakama, and CockroachDB. Players compete to claim the most boxes on a grid by drawing lines between adjacent dots.
 
 ## 🎮 Quick Start
 
 ### Prerequisites
 
 - **Docker & Docker Compose** (recommended)
-- Or: Go 1.21+, PostgreSQL 13+, Nakama 3.18+
+- Or: Go 1.21+, CockroachDB 24+, Nakama 3.18+
 
 ### Run with Docker (Recommended)
 
@@ -37,16 +37,16 @@ That's it! The game is now running at **http://localhost:8080**
 ### Run Locally Without Docker
 
 ```bash
-# 1. Start PostgreSQL
-createdb nakama
+# 1. Start CockroachDB and initialize the database
+docker compose up -d cockroach-certs cockroachdb cockroach-init
 
 # 2. Build Go module
 cd server/go_modules
 go build --buildmode=plugin -o backend.so
 
 # 3. Start Nakama
-nakama migrate up --database.address=postgresql://nakama:localpassword@localhost:5432/nakama
-nakama --database.address=postgresql://nakama:localpassword@localhost:5432/nakama \
+nakama migrate up --database.address=postgresql://root:change-me@localhost:26257/nakama?sslmode=require
+nakama --database.address=postgresql://root:change-me@localhost:26257/nakama?sslmode=require \
        --runtime.path=./server/go_modules
 
 # 4. Serve client (in another terminal)
@@ -65,7 +65,7 @@ open http://localhost:8080
 
 ```
 ┌─────────────────┐          ┌──────────────────┐          ┌──────────────┐
-│   Web Client    │          │   Nakama Server  │          │  PostgreSQL  │
+│   Web Client    │          │   Nakama Server  │          │ CockroachDB  │
 │   (HTML/JS)     │◄────────►│   (Go Runtime)   │◄────────►│   Database   │
 │                 │ HTTP RPC │                  │   SQL    │              │
 │                 │ + Socket │                  │          │              │
@@ -88,7 +88,9 @@ open http://localhost:8080
 
 **Files**:
 - `index.html` - UI, styling, and DOM structure
-- `client.js` - Nakama client integration, game rendering, event handling
+- `client.js` - Thin browser entrypoint
+- `services/dots-client.js` - Nakama client integration and state sync
+- `ui/game-flow.js` - Lobby/game screen flows and UI updates
 
 #### 2. **Game Server** (`server/go_modules/`)
 - **Technology**: Go 1.21 + Nakama Runtime
@@ -100,11 +102,15 @@ open http://localhost:8080
   - Handle player joins, disconnections, and game lifecycle
 
 **Files**:
-- `main.go` - RPC handlers, game logic, storage integration
-- `go.mod` - Go module dependencies
+- `module.go` - Nakama module registration
+- `rpc_game.go` - RPC handlers
+- `game_logic.go` - Game rules and turn logic
+- `storage.go` - Persistence helpers
+- `realtime.go` - Realtime broadcast helpers
+- `types.go` - Shared game types
 
-#### 3. **Database** (`PostgreSQL 15`)
-- **Technology**: PostgreSQL with Nakama Storage Collections
+#### 3. **Database** (`CockroachDB`)
+- **Technology**: CockroachDB with Nakama Storage Collections over the PostgreSQL wire protocol
 - **Responsibilities**:
   - Store active game states (recoverable on server restart)
   - Persist match history when games complete
@@ -117,7 +123,7 @@ open http://localhost:8080
 #### 4. **Deployment** (`docker-compose.yml`)
 - **Technology**: Docker Compose
 - **Services**:
-  - `postgres` - Database with health checks
+  - `cockroachdb` - Distributed SQL database with health checks
   - `nakama` - Custom build with Go plugin
   - `client` - Nginx serving static files
 
@@ -134,7 +140,7 @@ open http://localhost:8080
     ↓
 [Server] Generate UUID, initialize GameState
     ↓
-[Server] Persist to PostgreSQL (game_states collection)
+[Server] Persist to CockroachDB (game_states collection)
     ↓
 [Server] Broadcast lobby state to game channel
   ↓
@@ -144,7 +150,7 @@ open http://localhost:8080
     ↓
 [Server] Add player to GameState.players[]
     ↓
-[Server] Update PostgreSQL
+[Server] Update CockroachDB
     ↓
 [Server] Broadcast updated lobby state
   ↓
@@ -177,7 +183,7 @@ open http://localhost:8080
     ↓
 [Server] Check if game complete (all lines drawn)
     ↓
-[Server] Persist updated GameState to PostgreSQL
+[Server] Persist updated GameState to CockroachDB
     ↓
 [Server] If game complete, persist to match_history
     ↓
@@ -195,7 +201,7 @@ open http://localhost:8080
 ```
 [Server Crash/Restart]
     ↓
-[Nakama] Reconnects to PostgreSQL
+[Nakama] Reconnects to CockroachDB
     ↓
 [Client] Rejoin game and request get_game_state
     ↓
@@ -214,7 +220,7 @@ open http://localhost:8080
 
 ### GameState Collection (`game_states`)
 
-Nakama stores this as JSON in PostgreSQL's `storage` table.
+Nakama stores this as JSON in CockroachDB's `storage` table.
 
 ```json
 {
@@ -292,7 +298,7 @@ Persisted when a game completes.
 }
 ```
 
-**Why PostgreSQL + Nakama Storage?**
+**Why CockroachDB + Nakama Storage?**
 - ✅ ACID transactions ensure consistency
 - ✅ JSON support allows flexible schema
 - ✅ Nakama abstracts SQL complexity
@@ -456,23 +462,17 @@ POST /v2/rpc/make_move
 
 ### State Synchronization Strategy
 
-**Chosen Approach**: **HTTP Polling**
+**Chosen Approach**: **HTTP RPC for mutations + Nakama realtime sockets for state delivery**
 
-- Client polls `get_game_state` every 2 seconds
-- Simple, reliable, works with HTTP-only proxies
-- Acceptable latency for turn-based game
+- Clients send authoritative mutations via RPC
+- Nakama broadcasts updated state over room channels
+- `get_game_state` remains available for reconnect and refresh recovery
 
-**Alternative (not implemented)**: WebSockets
-
-- Would reduce latency to ~50ms
-- Requires persistent connections
-- More complex client/server state management
-
-**Why Polling for This Project?**
-- ✅ Simpler implementation (3-4 hour constraint)
-- ✅ Demonstrates state management principles
-- ✅ Easy to debug and test
-- ⚠️ 2-second latency acceptable for turn-based gameplay
+**Why This Approach?**
+- ✅ Keeps move validation server-authoritative
+- ✅ Reduces repeated read requests compared with steady-state polling
+- ✅ Delivers lobby and gameplay updates immediately to all connected clients
+- ✅ Still preserves a simple recovery path through explicit state fetches
 
 ---
 
@@ -509,14 +509,14 @@ POST /v2/rpc/make_move
 
 **Verdict**: Go is ideal for game servers. The type safety and performance are worth the verbosity.
 
-### Why PostgreSQL?
+### Why CockroachDB?
 
 **Pros**:
 - ✅ ACID transactions (consistency guarantees)
-- ✅ JSON support for flexible schemas
-- ✅ Proven scalability (millions of rows)
-- ✅ Rich query capabilities (future analytics)
-- ✅ Nakama's native storage backend
+- ✅ PostgreSQL wire compatibility for Nakama
+- ✅ Horizontal scaling path beyond single-node deployments
+- ✅ Rich SQL query capabilities (future analytics)
+- ✅ Suitable backing store for Nakama's storage backend
 
 **Cons**:
 - ⚠️ Heavier than SQLite (overkill for small deployments)
@@ -524,10 +524,10 @@ POST /v2/rpc/make_move
 
 **Alternatives Considered**:
 - **Redis**: Fast but lacks ACID guarantees
-- **MongoDB**: Good for NoSQL, but PostgreSQL's JSON support is sufficient
+- **MongoDB**: Good for NoSQL, but CockroachDB's SQL and JSON support is sufficient
 - **SQLite**: Simple, but doesn't support concurrent writes at scale
 
-**Verdict**: PostgreSQL is the safe, scalable choice for production.
+**Verdict**: CockroachDB is the safe, scalable choice for this deployment while preserving Nakama compatibility.
 
 ### Why Vanilla JS (No Framework)?
 
@@ -555,14 +555,14 @@ POST /v2/rpc/make_move
 - Race conditions impossible (turn order enforced)
 
 **Write Strategy**:
-- **Every move** writes to PostgreSQL
+- **Every move** writes to CockroachDB
 - No caching layer (simplicity over performance)
 - Average write latency: ~10ms
 
 **Read Strategy**:
-- Clients poll every 2 seconds
-- Server reads from PostgreSQL on each poll
-- Could optimize with Redis cache (future)
+- Clients receive realtime updates over Nakama room channels
+- Server still reads from CockroachDB for reconnects and explicit recovery
+- Could optimize with Redis cache or delta messages (future)
 
 ### Crash Recovery
 
@@ -570,8 +570,8 @@ POST /v2/rpc/make_move
 Scenario: Nakama crashes mid-game
 
 1. Nakama restarts
-2. PostgreSQL connection restored
-3. Client next polls `get_game_state`
+2. CockroachDB connection restored
+3. Client refetches `get_game_state`
 4. Server reads GameState from `game_states` collection
 5. Client resumes rendering from last persisted state
 6. Game continues with no data loss
@@ -602,7 +602,7 @@ Scenario: Nakama crashes mid-game
 | Component | Current Limit | Bottleneck |
 |-----------|---------------|------------|
 | **Nakama** | ~500 concurrent games | CPU (Go plugin execution) |
-| **PostgreSQL** | ~10k writes/sec | Disk I/O, connection pool |
+| **CockroachDB** | ~10k writes/sec | Network round-trips, SQL contention |
 | **Client Polling** | ~5k requests/sec | Network bandwidth |
 
 ### Scaling Strategy
@@ -617,15 +617,15 @@ Load Balancer (Nginx)
 └─────────┴─────────┴─────────┘
        ↓          ↓          ↓
 ┌─────────────────────────────┐
-│   PostgreSQL Primary        │
-│   + Read Replicas (3x)      │
+│   CockroachDB Cluster       │
+│   (multi-node SQL layer)    │
 └─────────────────────────────┘
 ```
 
 **Implementation**:
 - Use Nakama's built-in clustering (Raft consensus)
 - Session affinity at load balancer (sticky sessions)
-- Shared PostgreSQL (10k games ≈ 50MB RAM)
+- Shared CockroachDB cluster (10k games ≈ modest working set)
 
 #### 2. Database Optimization
 
@@ -640,26 +640,26 @@ Load Balancer (Nginx)
 
 **Expected Throughput**:
 - 10k games × 1 move/minute = 167 writes/sec ✅
-- 10k games × 2 polls/min = 333 reads/sec ✅
+- 10k active games receiving realtime updates remains within Nakama room-channel expectations for a modest cluster ✅
 
 #### 3. Client Optimization
 
-**Current**: Poll every 2 seconds
+**Current**: Realtime room updates with explicit recovery fetches
 
 **Optimizations**:
-1. **Adaptive Polling**: Poll faster when it's your turn (500ms), slower otherwise (5s)
-2. **WebSocket Upgrade**: Server pushes updates (eliminates polling)
+1. **Delta Messages**: Broadcast only move deltas instead of full state payloads
+2. **State Versioning**: Detect missed messages and trigger targeted resync
 3. **CDN for Client**: Serve HTML/JS from CloudFlare (99% cache hit)
 
 #### 4. Caching Layer
 
 ```
-Nakama → Redis (game state cache) → PostgreSQL
+Nakama → Redis (game state cache) → CockroachDB
 ```
 
 - Cache active games in Redis (TTL: 1 hour)
 - Write-through on moves
-- Fall back to PostgreSQL on cache miss
+- Fall back to CockroachDB on cache miss
 - **Expected speedup**: 10ms → 1ms reads
 
 ---
@@ -874,8 +874,12 @@ make clean
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NAKAMA_DATABASE_URL` | `postgresql://nakama:localpassword@postgres:5432/nakama` | PostgreSQL connection string |
-| `NAKAMA_LOGGER_LEVEL` | `debug` | Log verbosity (debug, info, warn, error) |
+| `COCKROACH_DB_NAME` | `nakama` | CockroachDB database name |
+| `COCKROACH_DB_USER` | `root` | CockroachDB SQL user |
+| `COCKROACH_DB_PASSWORD` | `change-me` | CockroachDB SQL password used during setup |
+| `CLIENT_SERVER_HOST` | `localhost` | Hostname the browser uses for the Nakama API/socket |
+| `CLIENT_SERVER_PORT` | `7350` | Port the browser uses for the Nakama API/socket |
+| `CLIENT_SERVER_USE_SSL` | `false` | Whether the browser should use HTTPS/WSS for Nakama |
 
 ---
 
@@ -897,7 +901,7 @@ curl http://localhost:7350/
 ### Game state not persisting
 
 ```bash
-# Check PostgreSQL
+# Check CockroachDB
 make shell-db
 SELECT * FROM storage WHERE collection = 'game_states';
 
@@ -927,7 +931,7 @@ This project is a coding challenge implementation for Arkadium. Use as reference
 ## 🙏 Acknowledgments
 
 - **Nakama** by Heroic Labs - Excellent open-source game server
-- **PostgreSQL** - Rock-solid database
+- **CockroachDB** - Distributed SQL database compatible with Nakama's PostgreSQL connection layer
 - **Arkadium** - For the well-designed coding challenge
 
 ---

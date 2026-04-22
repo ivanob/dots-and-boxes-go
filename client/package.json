@@ -1,0 +1,15 @@
+{
+  "name": "dots-and-boxes-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "build": "node ./scripts/build-single-file.mjs"
+  },
+  "dependencies": {
+    "@heroiclabs/nakama-js": "2.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.3"
+  }
+}

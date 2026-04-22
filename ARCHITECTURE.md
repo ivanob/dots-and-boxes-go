@@ -80,7 +80,7 @@ This document provides a detailed technical analysis of the Dots and Boxes multi
        │
        ▼
 ┌─────────────┐
-│ PostgreSQL  │
+│ CockroachDB │
 │   storage   │
 │   table     │
 └──────┬──────┘
@@ -103,7 +103,7 @@ Acting client → HTTP RPC mutation → Nakama
                ↓
              StorageWrite
                ↓
-             PostgreSQL
+             CockroachDB
                ↓
           ChannelMessageSend
                ↓
@@ -117,7 +117,7 @@ Client → RPC get_game_state → Nakama
                                   ↓
                             StorageRead
                                   ↓
-                            PostgreSQL
+                            CockroachDB
                                   ↓
                             Deserialize JSON
                                   ↓
@@ -130,7 +130,7 @@ Client ← Update UI ← Response
 
 ## Database Design
 
-### Physical Storage (PostgreSQL)
+### Physical Storage (CockroachDB)
 
 Nakama uses a single `storage` table:
 
@@ -260,7 +260,7 @@ CREATE INDEX idx_grid_size ON storage
 
 ### Consistency Guarantees
 
-**Transaction Isolation**: Read Committed (PostgreSQL default)
+**Transaction Isolation**: Serializable (CockroachDB default)
 
 **Invariants**:
 1. `len(lines)` always matches sum of `moves[].line`
@@ -271,7 +271,7 @@ CREATE INDEX idx_grid_size ON storage
 **Enforcement**:
 - Server-side validation before write
 - No client-side mutations
-- PostgreSQL JSONB schema validation (future)
+- CockroachDB JSON schema validation / constraints (future)
 
 ---
 
@@ -339,7 +339,7 @@ func checkInactivePlayers() {
 
 ```go
 func loadGameState(gameId string) *GameState {
-    // 1. Read from PostgreSQL
+    // 1. Read from CockroachDB
     objects := nk.StorageRead([]{
         Collection: "game_states",
         Key: gameId,
@@ -384,7 +384,7 @@ if (gameId) {
 - Horizontal: Add more Nakama instances
 - Vertical: Use CPU-optimized instances (c5.4xlarge)
 
-#### 2. PostgreSQL I/O (Persistence)
+#### 2. CockroachDB I/O (Persistence)
 
 **Current Capacity**:
 - gp3 SSD: 3000 IOPS baseline
@@ -433,7 +433,7 @@ if (gameId) {
        └────────┬────────┘
                 │
        ┌────────▼────────┐
-       │  PostgreSQL     │
+      │  CockroachDB    │
        │  Primary (RW)   │
        └────────┬────────┘
                 │
@@ -455,7 +455,7 @@ if (gameId) {
 | **DB Size** | 10 MB | 20 GB |
 | **Memory (Nakama)** | 256 MB | 4 GB |
 | **CPU (Nakama)** | 5% | 60% (3 instances) |
-| **PostgreSQL IOPS** | <10 | 500 |
+| **CockroachDB IOPS** | <10 | 500 |
 | **Network (polling)** | 10 req/s | 20,000 req/s |
 
 ### Cost Estimation (AWS)
@@ -463,7 +463,7 @@ if (gameId) {
 | Resource | Instance | Monthly Cost |
 |----------|----------|--------------|
 | Nakama (3×) | c5.2xlarge | $510 |
-| PostgreSQL | db.r5.xlarge | $408 |
+| CockroachDB | 3x db.r6g.large equivalent | $408 |
 | Redis (cache) | cache.r5.large | $170 |
 | Load Balancer | ALB | $25 |
 | **Total** | | **$1,113/month** |
@@ -625,14 +625,14 @@ WHERE collection = 'match_history'
 
 This architecture balances:
 - **Simplicity**: Easy to understand and debug
-- **Reliability**: PostgreSQL ensures consistency
+- **Reliability**: CockroachDB ensures consistency
 - **Scalability**: Clear path to 10k+ concurrent games
 - **Performance**: Sub-100ms response times
 
 Key design decisions:
 1. **Go + Nakama**: Production-grade game server
-2. **PostgreSQL**: ACID guarantees over NoSQL speed
-3. **HTTP Polling**: Simplicity over WebSocket complexity
+2. **CockroachDB**: ACID guarantees over NoSQL speed
+3. **RPC + Realtime Channels**: Simplicity for authoritative writes with immediate client updates
 4. **Server Authority**: All validation server-side
 
 Trade-offs accepted:

@@ -43,7 +43,7 @@ make clean       # Remove all data
 - **Game**: http://localhost:8080
 - **Nakama Console**: http://localhost:7351 (admin:password)
 - **Nakama API**: http://localhost:7350
-- **Database**: `psql postgresql://nakama:localpassword@localhost:5432/nakama`
+- **Database**: `make shell-db` for a CockroachDB SQL shell
 
 ## 🧪 Testing the Game
 
@@ -72,14 +72,14 @@ make clean       # Remove all data
 ## 📝 Architecture Overview
 
 ```
-Browser → Nakama (Go) → PostgreSQL
+Browser → Nakama (Go) → CockroachDB
    ↑                        ↓
         └── Realtime socket push ┘
 ```
 
 - **Client**: Vanilla JS + Canvas
 - **Server**: Nakama with Go runtime
-- **Database**: PostgreSQL 15
+- **Database**: CockroachDB
 - **Communication**: HTTP RPC + Realtime socket updates
 
 ## 🐛 Troubleshooting
@@ -106,7 +106,7 @@ SELECT * FROM storage WHERE collection = 'game_states';
 
 - **README.md** - Complete documentation
 - **ARCHITECTURE.md** - Deep technical dive
-- **server/go_modules/main.go** - Game logic implementation
+- **server/go_modules/game_logic.go** - Core game rule implementation
 
 ## 🎯 Key Features Implemented
 

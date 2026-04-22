@@ -107,6 +107,12 @@ services:
     image: nginx:alpine
     volumes:
       - ./client:/usr/share/nginx/html
+    environment:
+      CLIENT_SERVER_HOST: ${CLIENT_SERVER_HOST}
+      CLIENT_SERVER_PORT: ${CLIENT_SERVER_PORT}
+      CLIENT_SERVER_USE_SSL: ${CLIENT_SERVER_USE_SSL}
+    command: >
+      /bin/sh -c "envsubst '$$CLIENT_SERVER_HOST $$CLIENT_SERVER_PORT $$CLIENT_SERVER_USE_SSL' < /usr/share/nginx/html/runtime-config.template.js > /usr/share/nginx/html/runtime-config.js && nginx -g 'daemon off;'"
     ports:
       - "8080:80"
     depends_on:

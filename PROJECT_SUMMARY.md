@@ -9,7 +9,7 @@
 | **Web-based client (HTML/JS)** | ✅ Complete | Vanilla JS + HTML5 Canvas in `client/` |
 | **Server component with authoritative state** | ✅ Complete | Nakama with Go runtime in `server/go_modules/` |
 | **Real-time communication (WebSockets)** | ✅ Complete | HTTP RPC for mutations + Nakama socket pushes for state sync |
-| **Database for persistence** | ✅ Complete | PostgreSQL 15 with Nakama storage collections |
+| **Database for persistence** | ✅ Complete | CockroachDB with Nakama storage collections |
 | **README with architecture** | ✅ Complete | Comprehensive README.md + ARCHITECTURE.md |
 
 ### Required Functionality
@@ -18,7 +18,7 @@
 |---------|--------|---------|
 | **Lobby / Matchmaking** | ✅ Complete | Create/join game by ID |
 | **Real-time gameplay** | ✅ Complete | 2+ players with server-pushed updates |
-| **Persistence** | ✅ Complete | Survives server restart, loads from PostgreSQL |
+| **Persistence** | ✅ Complete | Survives server restart, loads from CockroachDB |
 | **Match history** | ✅ Complete | Stores winner, scores, moves, duration |
 | **Game resolution** | ✅ Complete | Win/lose/draw detection and display |
 | **Disconnection handling** | ⚠️ Basic | Can rejoin via Game ID (no auto-reconnect) |
@@ -42,10 +42,10 @@
 
 ### 1. **Technology Stack**
 
-**Chosen**: Go + Nakama + PostgreSQL
+**Chosen**: Go + Nakama + CockroachDB
 - ✅ Production-grade game server framework
 - ✅ Strong typing and performance (Go)
-- ✅ ACID guarantees (PostgreSQL)
+- ✅ ACID guarantees (CockroachDB)
 - ✅ Scales to 10k+ concurrent games
 
 **Alternatives Considered**:
@@ -65,7 +65,7 @@
 
 **Chosen**: JSONB in Nakama storage collections
 - ✅ Flexible schema for game state
-- ✅ PostgreSQL reliability
+- ✅ CockroachDB reliability
 - ✅ Easy to query for analytics
 - ✅ No ORM complexity
 
@@ -89,13 +89,19 @@
 ```
 arkadium/
 ├── client/
-│   ├── index.html           (480 lines) - UI and styling
-│   └── client.js            (620 lines) - Nakama client + game logic
+│   ├── index.html           - UI and styling
+│   ├── client.js            - Thin browser entrypoint
+│   ├── services/            - Nakama client and state sync
+│   └── ui/                  - Game and lobby flows
 ├── server/
 │   ├── Dockerfile           (10 lines)  - Nakama + Go build
 │   └── go_modules/
-│       ├── main.go          (580 lines) - Game server implementation
-│       └── go.mod           (4 lines)   - Go dependencies
+│       ├── module.go        - Nakama module registration
+│       ├── rpc_game.go      - RPC handlers
+│       ├── game_logic.go    - Core game rules
+│       ├── storage.go       - Storage helpers
+│       ├── realtime.go      - Realtime broadcasting
+│       └── go.mod           - Go dependencies
 ├── docker-compose.yml       (60 lines)  - Full stack orchestration
 ├── Makefile                 (40 lines)  - Dev commands
 ├── README.md                (850 lines) - Comprehensive docs
@@ -126,7 +132,7 @@ arkadium/
 
 #### 3. Persistence Layer (`main.go` storage functions)
 - ✅ JSON serialization/deserialization
-- ✅ PostgreSQL writes on every move
+- ✅ CockroachDB writes on every move
 - ✅ Match history on completion
 - ✅ State recovery on restart
 
@@ -138,7 +144,7 @@ arkadium/
 
 #### 1. **How does game state flow?**
 ```
-Client → RPC → Nakama → Validate → Apply Logic → PostgreSQL
+Client → RPC → Nakama → Validate → Apply Logic → CockroachDB
          ←─────── Response ←─────────────────────┘
 ```
 - State written to DB after every move
@@ -160,7 +166,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#database-design) for full ERD and table de
 #### 4. **How to serve 10,000 concurrent players?**
 See [ARCHITECTURE.md](ARCHITECTURE.md#scaling-analysis) for detailed plan.
 - Horizontal scaling: 3 Nakama instances
-- Read replicas: 3 PostgreSQL replicas
+- Multi-node CockroachDB cluster / follower reads
 - Redis cache: In-memory game states
 - WebSocket upgrade: Eliminate polling
 - **Estimated cost**: $1,113/month (AWS)
@@ -268,7 +274,7 @@ open http://localhost:8080
 |----------|--------|-----------------|-------|
 | **System Design** | 30% | 90% | Clear separation, scalability documented, reasonable boundaries |
 | **Real-Time Networking** | 20% | 70% | Polling works, but WebSocket would be better |
-| **Persistence** | 20% | 95% | PostgreSQL, migration strategy, consistency guaranteed |
+| **Persistence** | 20% | 95% | CockroachDB, migration strategy, consistency guaranteed |
 | **Code Quality** | 15% | 85% | Clean Go, readable JS, good abstractions |
 | **Documentation** | 10% | 100% | Comprehensive README, ARCHITECTURE, honest trade-offs |
 | **Extras** | 5% | 70% | Docker ✅, Makefile ✅, Tests ❌, CI ❌ |
@@ -280,7 +286,7 @@ open http://localhost:8080
 ## 🙏 Final Notes
 
 This project demonstrates:
-- Production-ready architecture (Nakama + Go + PostgreSQL)
+- Production-ready architecture (Nakama + Go + CockroachDB)
 - Clear documentation of design decisions
 - Honest assessment of trade-offs
 - Practical scaling considerations

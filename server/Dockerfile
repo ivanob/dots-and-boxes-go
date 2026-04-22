@@ -3,7 +3,7 @@ FROM heroiclabs/nakama-pluginbuilder:3.22.0 AS builder
 
 WORKDIR /build
 COPY go_modules/go.mod ./go.mod
-COPY go_modules/main.go ./main.go
+COPY go_modules/*.go ./
 
 RUN go mod tidy
 
