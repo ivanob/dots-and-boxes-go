@@ -460,6 +460,7 @@
 
       const script = document.createElement("script");
       script.src = "client.js";
+      script.type = "module";
       document.body.appendChild(script);
     })().catch((error) => {
       console.error("Failed to load Nakama SDK:", error);

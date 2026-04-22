@@ -759,11 +759,6 @@ scenarios:
 
 ### High Priority (Production-Critical)
 
-1. **WebSocket State Sync** (2 hours)
-   - Replace polling with real-time push
-   - Reduce latency from 2s to 50ms
-   - Better UX for multiplayer feel
-
 2. **Comprehensive Testing** (4 hours)
    - Unit tests for all game logic
    - Integration tests for RPC flows
