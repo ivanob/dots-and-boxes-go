@@ -11,6 +11,12 @@ const outDir = path.join(clientDir, "dist");
 const indexPath = path.join(clientDir, "index.html");
 const bundleEntryPath = path.join(clientDir, "bundle-entry.js");
 
+const buildConfig = {
+  serverUrl: process.env.CLIENT_SERVER_HOST || "localhost",
+  serverPort: process.env.CLIENT_SERVER_PORT || "7350",
+  useSSL: process.env.CLIENT_SERVER_USE_SSL || "false",
+};
+
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 
@@ -26,9 +32,10 @@ const bundleResult = await build({
 
 const bundledCode = bundleResult.outputFiles[0].text;
 const indexHtml = await readFile(indexPath, "utf8");
+const configScript = `<script>window.__DOTS_CONFIG__ = ${JSON.stringify(buildConfig)};</script>`;
 const bundledHtml = indexHtml.replace(
-  /<script>[\s\S]*?\(async function loadClient\([\s\S]*?<\/script>/,
-  `<script type="module">${bundledCode}</script>`
+  /<script src="runtime-config\.js"><\/script>\s*<script>[\s\S]*?\(async function loadClient\([\s\S]*?<\/script>/,
+  `${configScript}\n  <script type="module">${bundledCode}</script>`
 );
 
 if (bundledHtml === indexHtml) {
@@ -37,4 +44,4 @@ if (bundledHtml === indexHtml) {
 
 await writeFile(path.join(outDir, "index.html"), bundledHtml, "utf8");
 
-console.log("Built client/dist/index.html");
+console.log(`Built client/dist/index.html with server ${buildConfig.serverUrl}:${buildConfig.serverPort} (ssl=${buildConfig.useSSL})`);

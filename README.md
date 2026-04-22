@@ -936,6 +936,8 @@ This project is a coding challenge implementation for Arkadium. Use as reference
 
 ---
 
-**Built with ❤️ for the Arkadium Coding Challenge**
-
-For questions: Review the code, run locally, and explore the architecture!
+## Deployment
+I have deployed this project into my private VPS so can be tested straight out-of-the-box. The URLs are:
+- Client: https://arkadium-dots-boxes.s3.eu-west-1.amazonaws.com/index.html 
+- Server Nakama: http://161.97.163.223:7351/#/login?next=%2Fstatus
+ 

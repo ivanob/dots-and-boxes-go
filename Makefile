@@ -13,6 +13,7 @@ help:
 	@echo "  make test-client     - Run client unit tests"
 	@echo "  make test-server     - Run server unit tests"
 	@echo "  make build-client    - Build a single-file client bundle for static hosting"
+	@echo "                          Optional env: CLIENT_SERVER_HOST, CLIENT_SERVER_PORT, CLIENT_SERVER_USE_SSL"
 	@echo "  make clean           - Remove containers and volumes"
 	@echo "  make rebuild         - Rebuild and restart"
 	@echo "  make ps              - Show running containers"

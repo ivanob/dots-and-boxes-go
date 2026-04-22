@@ -1,2 +1,10 @@
 arkadium-coding-challenge.md
 .env
+node_modules/
+dist/
+coverage/
+client/dist/*
+client/dist/index.html
+.DS_Store
+runtime-config.js
+runti
