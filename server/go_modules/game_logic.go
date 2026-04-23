@@ -6,6 +6,19 @@ import (
 	"time"
 )
 
+func buildLineSet(lines []string) map[string]struct{} {
+	lineSet := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		lineSet[line] = struct{}{}
+	}
+	return lineSet
+}
+
+func hasLine(lineSet map[string]struct{}, lineKey string) bool {
+	_, ok := lineSet[lineKey]
+	return ok
+}
+
 func getLineKey(x1, y1, x2, y2 int) string {
 	minX, maxX := x1, x2
 	if x1 > x2 {
@@ -23,6 +36,10 @@ func getBoxKey(x, y int) string {
 }
 
 func isValidLine(gridSize int, x1, y1, x2, y2 int, existingLines []string) bool {
+	return isValidLineWithSet(gridSize, x1, y1, x2, y2, buildLineSet(existingLines))
+}
+
+func isValidLineWithSet(gridSize int, x1, y1, x2, y2 int, lineSet map[string]struct{}) bool {
 	if x1 < 0 || x1 >= gridSize || x2 < 0 || x2 >= gridSize {
 		return false
 	}
@@ -37,41 +54,27 @@ func isValidLine(gridSize int, x1, y1, x2, y2 int, existingLines []string) bool 
 	}
 
 	lineKey := getLineKey(x1, y1, x2, y2)
-	for _, line := range existingLines {
-		if line == lineKey {
-			return false
-		}
-	}
-
-	return true
+	return !hasLine(lineSet, lineKey)
 }
 
 func isBoxComplete(boxX, boxY int, lines []string) bool {
+	return isBoxCompleteWithSet(boxX, boxY, buildLineSet(lines))
+}
+
+func isBoxCompleteWithSet(boxX, boxY int, lineSet map[string]struct{}) bool {
 	top := getLineKey(boxX, boxY, boxX+1, boxY)
 	bottom := getLineKey(boxX, boxY+1, boxX+1, boxY+1)
 	left := getLineKey(boxX, boxY, boxX, boxY+1)
 	right := getLineKey(boxX+1, boxY, boxX+1, boxY+1)
 
-	hasTop, hasBottom, hasLeft, hasRight := false, false, false, false
-	for _, line := range lines {
-		if line == top {
-			hasTop = true
-		}
-		if line == bottom {
-			hasBottom = true
-		}
-		if line == left {
-			hasLeft = true
-		}
-		if line == right {
-			hasRight = true
-		}
-	}
-
-	return hasTop && hasBottom && hasLeft && hasRight
+	return hasLine(lineSet, top) && hasLine(lineSet, bottom) && hasLine(lineSet, left) && hasLine(lineSet, right)
 }
 
 func getCompletedBoxes(gridSize, x1, y1, x2, y2 int, lines []string) []string {
+	return getCompletedBoxesWithSet(gridSize, x1, y1, x2, y2, buildLineSet(lines))
+}
+
+func getCompletedBoxesWithSet(gridSize, x1, y1, x2, y2 int, lineSet map[string]struct{}) []string {
 	completed := []string{}
 	boxCount := gridSize - 1
 
@@ -84,14 +87,14 @@ func getCompletedBoxes(gridSize, x1, y1, x2, y2 int, lines []string) []string {
 
 		if x > 0 {
 			boxX, boxY := x-1, minY
-			if isBoxComplete(boxX, boxY, lines) {
+			if isBoxCompleteWithSet(boxX, boxY, lineSet) {
 				completed = append(completed, getBoxKey(boxX, boxY))
 			}
 		}
 
 		if x < boxCount {
 			boxX, boxY := x, minY
-			if isBoxComplete(boxX, boxY, lines) {
+			if isBoxCompleteWithSet(boxX, boxY, lineSet) {
 				completed = append(completed, getBoxKey(boxX, boxY))
 			}
 		}
@@ -104,14 +107,14 @@ func getCompletedBoxes(gridSize, x1, y1, x2, y2 int, lines []string) []string {
 
 		if y > 0 {
 			boxX, boxY := minX, y-1
-			if isBoxComplete(boxX, boxY, lines) {
+			if isBoxCompleteWithSet(boxX, boxY, lineSet) {
 				completed = append(completed, getBoxKey(boxX, boxY))
 			}
 		}
 
 		if y < boxCount {
 			boxX, boxY := minX, y
-			if isBoxComplete(boxX, boxY, lines) {
+			if isBoxCompleteWithSet(boxX, boxY, lineSet) {
 				completed = append(completed, getBoxKey(boxX, boxY))
 			}
 		}
@@ -137,14 +140,17 @@ func applyMove(gameState *GameState, playerIndex, x1, y1, x2, y2 int) MoveResult
 		return MoveResult{Valid: false, BoxesClaimed: []string{}, NextPlayer: gameState.CurrentPlayerIndex}
 	}
 
-	if !isValidLine(gameState.GridSize, x1, y1, x2, y2, gameState.Lines) {
+	lineSet := buildLineSet(gameState.Lines)
+
+	if !isValidLineWithSet(gameState.GridSize, x1, y1, x2, y2, lineSet) {
 		return MoveResult{Valid: false, BoxesClaimed: []string{}, NextPlayer: gameState.CurrentPlayerIndex}
 	}
 
 	lineKey := getLineKey(x1, y1, x2, y2)
 	gameState.Lines = append(gameState.Lines, lineKey)
+	lineSet[lineKey] = struct{}{}
 
-	completedBoxes := getCompletedBoxes(gameState.GridSize, x1, y1, x2, y2, gameState.Lines)
+	completedBoxes := getCompletedBoxesWithSet(gameState.GridSize, x1, y1, x2, y2, lineSet)
 	playerID := gameState.Players[playerIndex]
 
 	for _, boxKey := range completedBoxes {

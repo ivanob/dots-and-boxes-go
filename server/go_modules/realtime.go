@@ -22,7 +22,7 @@ func broadcastGameState(ctx context.Context, logger runtime.Logger, nk runtime.N
 	content := map[string]interface{}{
 		"type":      "game_state_update",
 		"gameId":    gameState.ID,
-		"gameState": gameState,
+		"gameState": buildGameStateView(gameState),
 	}
 
 	broadcastGameEvent(ctx, logger, nk, gameState.ID, content)

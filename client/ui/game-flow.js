@@ -344,7 +344,7 @@ export function updateGameOverScreen(data) {
     finalScores.appendChild(row);
   });
 
-  getElement("statMoves").textContent = gameState.moves?.length || 0;
+  getElement("statMoves").textContent = gameState.moveCount ?? gameState.moves?.length ?? 0;
   const duration = gameState.updatedAt - gameState.createdAt;
   const minutes = Math.floor(duration / 60);
   const seconds = duration % 60;

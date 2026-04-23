@@ -56,7 +56,7 @@ func rpcCreateGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk ru
 	response := map[string]interface{}{
 		"gameId":    gameID,
 		"status":    "waiting_for_players",
-		"gameState": gameState,
+		"gameState": buildGameStateView(gameState),
 	}
 
 	data, _ := json.Marshal(response)
@@ -111,7 +111,7 @@ func rpcJoinGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runt
 		"status":      map[bool]string{true: "started", false: "joined"}[gameState.Started],
 		"players":     gameState.Players,
 		"playerCount": len(gameState.Players),
-		"gameState":   gameState,
+		"gameState":   buildGameStateView(gameState),
 	}
 
 	data, _ := json.Marshal(response)
@@ -133,7 +133,7 @@ func rpcGetGameState(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 		return "", err
 	}
 
-	data, _ := json.Marshal(gameState)
+	data, _ := json.Marshal(buildGameStateView(gameState))
 	return string(data), nil
 }
 
@@ -168,7 +168,7 @@ func rpcStartGame(ctx context.Context, logger runtime.Logger, db *sql.DB, nk run
 	response := map[string]interface{}{
 		"gameId":    request.GameID,
 		"status":    "started",
-		"gameState": gameState,
+		"gameState": buildGameStateView(gameState),
 	}
 
 	data, _ := json.Marshal(response)
@@ -241,7 +241,6 @@ func rpcMakeMove(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runt
 		"scores":        gameState.Scores,
 		"completed":     gameState.Completed,
 		"winner":        gameState.Winner,
-		"gameState":     gameState,
 	}
 
 	data, _ := json.Marshal(response)

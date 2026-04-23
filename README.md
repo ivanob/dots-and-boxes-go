@@ -11,6 +11,13 @@ A real-time multiplayer **Dots and Boxes** game built with Go, Nakama, and Cockr
 
 ## 🎮 Quick Start
 
+## Deployment
+I have deployed this project into my private VPS so can be tested straight out-of-the-box. The URLs are:
+- Client: http://arkadium-dots-boxes.s3-website.eu-west-1.amazonaws.com
+- Server Nakama: http://161.97.163.223:7351/#/login?next=%2Fstatus
+ 
+---
+
 ### Prerequisites
 
 - **Docker & Docker Compose** (recommended)
@@ -933,11 +940,3 @@ This project is a coding challenge implementation for Arkadium. Use as reference
 - **Nakama** by Heroic Labs - Excellent open-source game server
 - **CockroachDB** - Distributed SQL database compatible with Nakama's PostgreSQL connection layer
 - **Arkadium** - For the well-designed coding challenge
-
----
-
-## Deployment
-I have deployed this project into my private VPS so can be tested straight out-of-the-box. The URLs are:
-- Client: http://arkadium-dots-boxes.s3-website.eu-west-1.amazonaws.com
-- Server Nakama: http://161.97.163.223:7351/#/login?next=%2Fstatus
- 

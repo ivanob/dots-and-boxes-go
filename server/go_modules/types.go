@@ -17,6 +17,44 @@ type GameState struct {
 	Scores             map[string]int    `json:"scores"`
 }
 
+type GameStateView struct {
+	ID                 string            `json:"id"`
+	Players            []string          `json:"players"`
+	GridSize           int               `json:"gridSize"`
+	Started            bool              `json:"started"`
+	Lines              []string          `json:"lines"`
+	Boxes              map[string]string `json:"boxes"`
+	CurrentPlayerIndex int               `json:"currentPlayerIndex"`
+	MoveCount          int               `json:"moveCount"`
+	CreatedAt          int64             `json:"createdAt"`
+	UpdatedAt          int64             `json:"updatedAt"`
+	Completed          bool              `json:"completed"`
+	Winner             string            `json:"winner,omitempty"`
+	Scores             map[string]int    `json:"scores"`
+}
+
+func buildGameStateView(gameState *GameState) *GameStateView {
+	if gameState == nil {
+		return nil
+	}
+
+	return &GameStateView{
+		ID:                 gameState.ID,
+		Players:            gameState.Players,
+		GridSize:           gameState.GridSize,
+		Started:            gameState.Started,
+		Lines:              gameState.Lines,
+		Boxes:              gameState.Boxes,
+		CurrentPlayerIndex: gameState.CurrentPlayerIndex,
+		MoveCount:          len(gameState.Moves),
+		CreatedAt:          gameState.CreatedAt,
+		UpdatedAt:          gameState.UpdatedAt,
+		Completed:          gameState.Completed,
+		Winner:             gameState.Winner,
+		Scores:             gameState.Scores,
+	}
+}
+
 // Move represents a single move in the game
 type Move struct {
 	PlayerIndex  int      `json:"playerIndex"`
